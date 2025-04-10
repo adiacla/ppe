@@ -63,7 +63,6 @@ with tab2:
 
 # Procesamiento si hay imagen
 if procesar and imagen_original:
-    # Mostrar imagen original
     st.subheader("🔍 Imagen cargada")
     st.image(imagen_original, use_container_width=True)
 
@@ -90,12 +89,21 @@ if procesar and imagen_original:
             resultados_ppe = modelo_ppe(temp_file.name)[0]
             etiquetas_detectadas = [modelo_ppe.names[int(d.cls)] for d in resultados_ppe.boxes]
 
-            # Mostrar resultados
-            st.markdown(f"### 👤 Persona {i}")
-            st.image(persona_img, caption="Persona detectada", channels="BGR", width=300)
+            # Dibujar bounding boxes
+            for box in resultados_ppe.boxes:
+                x1o, y1o, x2o, y2o = map(int, box.xyxy[0])
+                label = modelo_ppe.names[int(box.cls[0])]
+                conf = float(box.conf[0])
+                cv2.rectangle(persona_img, (x1o, y1o), (x2o, y2o), (0, 255, 0), 2)
+                cv2.putText(persona_img, f"{label} {conf:.2f}", (x1o, y1o - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
+            # Mostrar imagen con objetos detectados
+            st.markdown(f"### 👤 Persona {i}")
+            st.image(persona_img, caption="Objetos detectados en la persona", channels="BGR", width=300)
             st.markdown("**Objetos detectados:** " + ", ".join(etiquetas_detectadas))
 
+            # Verificación de cumplimiento
             requeridos = {"casco", "chaleco", "botas"}
             presentes = set(etiquetas_detectadas)
 
@@ -107,3 +115,4 @@ if procesar and imagen_original:
 
     st.markdown("---")
     st.markdown("**Autor: Alfredo Díaz**  \nUnab 2025! ©️")
+
