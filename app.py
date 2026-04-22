@@ -75,7 +75,7 @@ if foto:
         # -----------------------
         # Validación PPE
         # -----------------------
-        requeridos = {"casco", "chaleco", "botas"}
+        requeridos = {"Casco", "Chaleco", "Botas"}
         presentes = set(etiquetas)
 
         if requeridos.issubset(presentes):
