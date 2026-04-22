@@ -1,11 +1,10 @@
 import streamlit as st
-from PIL import Image
-import cv2
+from PIL import Image, ImageDraw
 import numpy as np
 from ultralytics import YOLO
 
 # -----------------------
-# Cargar modelos (cache)
+# Cargar modelos
 # -----------------------
 @st.cache_resource
 def load_models():
@@ -16,29 +15,24 @@ def load_models():
 modelo_personas, modelo_ppe = load_models()
 
 # -----------------------
-# Configuración
+# UI
 # -----------------------
 st.set_page_config(page_title="Sistema PPE", layout="wide")
-
 st.title("🦺 Sistema Inteligente de PPE")
 
-# -----------------------
-# Input
-# -----------------------
 foto = st.file_uploader("Sube una imagen", type=["jpg", "png", "jpeg"])
 
 if foto:
-    imagen_original = Image.open(foto)
+    imagen_original = Image.open(foto).convert("RGB")
     st.image(imagen_original, caption="Imagen cargada", use_container_width=True)
 
-    # Convertir a OpenCV
-    img_cv = np.array(imagen_original)
-    img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
+    # Convertir a numpy (YOLO usa esto)
+    img_np = np.array(imagen_original)
 
     # -----------------------
     # Detectar personas
     # -----------------------
-    resultados_personas = modelo_personas(img_cv)[0]
+    resultados_personas = modelo_personas(img_np)[0]
 
     personas = []
     for box in resultados_personas.boxes:
@@ -54,13 +48,12 @@ if foto:
     # -----------------------
     for i, (x1, y1, x2, y2) in enumerate(personas, 1):
 
-        persona_img = img_cv[y1:y2, x1:x2].copy()
+        persona_crop = imagen_original.crop((x1, y1, x2, y2))
+        persona_np = np.array(persona_crop)
 
-        if persona_img.size == 0:
-            continue
+        resultados_ppe = modelo_ppe(persona_np)[0]
 
-        resultados_ppe = modelo_ppe(persona_img)[0]
-
+        draw = ImageDraw.Draw(persona_crop)
         etiquetas = []
 
         for box in resultados_ppe.boxes:
@@ -71,20 +64,13 @@ if foto:
 
             x1o, y1o, x2o, y2o = map(int, box.xyxy[0])
 
-            cv2.rectangle(persona_img, (x1o, y1o), (x2o, y2o), (0, 255, 0), 2)
-            cv2.putText(
-                persona_img,
-                f"{label} {conf:.2f}",
-                (x1o, y1o - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 0),
-                2,
-            )
+            # Dibujar caja
+            draw.rectangle([x1o, y1o, x2o, y2o], outline="green", width=3)
+            draw.text((x1o, y1o - 10), f"{label} {conf:.2f}", fill="green")
 
         # Mostrar resultado
         st.markdown(f"### 👤 Persona {i}")
-        st.image(persona_img, channels="BGR", width=300)
+        st.image(persona_crop, width=300)
 
         # -----------------------
         # Validación PPE
@@ -97,4 +83,3 @@ if foto:
         else:
             faltantes = requeridos - presentes
             st.error(f"🚨 Faltan: {', '.join(faltantes)}")
-
