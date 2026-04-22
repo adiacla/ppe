@@ -44,7 +44,7 @@ st.markdown("""
 **📌 Instrucciones de uso:**
 1. Sube una fotografía del trabajador.
 2. El sistema detectará automáticamente a las personas en la imagen.
-3. Se verificará si portan el Equipo de Protección Personal obligatorio (**Casco, Chaleco y Guantes**).
+3. Se verificará si portan el Equipo de Protección Personal obligatorio (**Casco y Chaleco**).
 4. El semáforo indicará si la persona está autorizada para ingresar a la planta.
 """)
 st.markdown("---")
@@ -124,15 +124,15 @@ if foto:
             # -----------------------
             st.markdown("#### 🚥 Control de Acceso a Planta")
             
-            # Requisitos traducidos al español (deben coincidir con el diccionario)
-            requeridos = {"Casco", "Chaleco", "Guantes"}
+            # Requisitos OBLIGATORIOS (solo Casco y Chaleco)
+            requeridos = {"Casco", "Chaleco"}
             presentes = set(etiquetas)
 
             if requeridos.issubset(presentes):
-                st.success("🟢 **ACCESO PERMITIDO:** El trabajador cumple con todo el equipo de seguridad requerido.")
+                st.success("🟢 **ACCESO PERMITIDO:** El trabajador cumple con el equipo de seguridad obligatorio (Casco y Chaleco).")
             else:
                 faltantes = requeridos - presentes
-                st.error(f"🔴 **ACCESO DENEGADO:** Riesgo crítico de seguridad. Faltan los siguientes equipos: **{', '.join(faltantes)}**")
+                st.error(f"🔴 **ACCESO DENEGADO:** Riesgo crítico de seguridad. Faltan los siguientes equipos obligatorios: **{', '.join(faltantes)}**")
 
             # -----------------------
             # Analítica Predictiva
