@@ -1,12 +1,15 @@
 import os
-# Evita el warning de Ultralytics en Streamlit Cloud
-os.environ["YOLO_CONFIG_DIR"] = "/tmp/Ultralytics"
-
 import streamlit as st
 from PIL import Image, ImageDraw
 import numpy as np
 import pandas as pd
 from ultralytics import YOLO
+
+# 1. set_page_config DEBE ser el primer comando de Streamlit
+st.set_page_config(page_title="Detección de PPE", layout="wide", page_icon="🏭")
+
+# Evita el warning de Ultralytics en Streamlit Cloud
+os.environ["YOLO_CONFIG_DIR"] = "/tmp/Ultralytics"
 
 # -----------------------
 # Diccionario de Traducción
@@ -22,82 +25,84 @@ TRADUCCION_CLASES = {
 }
 
 # -----------------------
-# Cargar modelos
+# Cargar modelos con manejo seguro de errores
 # -----------------------
 @st.cache_resource
 def load_models():
-    try:
-        modelo_personas = YOLO("yolov8n.pt")
-    except Exception as e:
-        mensaje = "No se pudo cargar yolov8n.pt. Asegúrate de que el archivo exista."
-        st.error(mensaje)
-        raise RuntimeError(mensaje) from e
+    # Verificamos si los archivos existen antes de intentar cargarlos
+    if not os.path.exists("yolov8n.pt"):
+        st.error("🛑 Error: No se encontró el archivo 'yolov8n.pt'. Asegúrate de que esté en el repositorio.")
+        st.stop() # Detiene la ejecución sin mostrar un traceback feo al usuario
+        
+    if not os.path.exists("best.pt"):
+        st.error("🛑 Error: No se encontró el archivo 'best.pt'. Asegúrate de que esté en el repositorio. Si pesa mucho, usa Git LFS.")
+        st.stop()
 
     try:
+        modelo_personas = YOLO("yolov8n.pt")
         modelo_ppe = YOLO("best.pt")
+        return modelo_personas, modelo_ppe
     except Exception as e:
-        mensaje = "No se pudo cargar best.pt. Asegúrate de que el archivo exista."
-        st.error(mensaje)
-        raise RuntimeError(mensaje) from e
-        
-    return modelo_personas, modelo_ppe
+        st.error(f"Error interno al cargar los modelos: {e}")
+        st.stop()
 
 modelo_personas, modelo_ppe = load_models()
 
 # -----------------------
 # UI y Configuración
 # -----------------------
-st.set_page_config(page_title="Detección de PPE", layout="wide")
-
 st.title("🏭 Sistema Inteligente de Detección de EPP")
 st.markdown("""
 **📌 Instrucciones de uso:**
-1. Sube una fotografía del trabajador o usa la cámara en vivo.
-2. El sistema detectará automáticamente a las personas.
+1. Sube una fotografía o usa la cámara web.
+2. El sistema detectará automáticamente a las personas en la imagen.
 3. Se verificará si portan el Equipo de Protección Personal obligatorio (**Casco y Chaleco**).
-4. El semáforo indicará si la persona está autorizada para ingresar.
+4. El semáforo indicará si la persona está autorizada para ingresar a la planta.
 """)
 st.markdown("---")
 
 # -----------------------
-# Captura de Imagen (Archivo o Cámara)
+# Selección de entrada de imagen (Archivo o Cámara)
 # -----------------------
-col_input1, col_input2 = st.columns(2)
+opcion_entrada = st.radio("Selecciona el método de entrada:", ["Subir imagen 📁", "Usar cámara web 📷"])
 
-with col_input1:
-    foto_subida = st.file_uploader("1️⃣ Sube una imagen para analizar", type=["jpg", "png", "jpeg"])
+foto = None
+if opcion_entrada == "Subir imagen 📁":
+    foto = st.file_uploader("Sube una imagen para analizar", type=["jpg", "png", "jpeg"])
+else:
+    foto = st.camera_input("Toma una foto del trabajador")
 
-with col_input2:
-    foto_camara = st.camera_input("2️⃣ O toma una foto desde la cámara")
-
-# Prioridad a la cámara si ambas están activas
-foto_final = foto_camara if foto_camara is not None else foto_subida
-
-if foto_final:
-    # Cargar imagen con PIL
-    imagen_original = Image.open(foto_final).convert("RGB")
+# -----------------------
+# Procesamiento de la Imagen
+# -----------------------
+if foto:
+    # Cargar con PIL y asegurar que sea RGB
+    imagen_original = Image.open(foto).convert("RGB")
     
     with st.expander("Ver imagen original", expanded=False):
-        st.image(imagen_original, caption="Imagen capturada", use_container_width=True)
+        st.image(imagen_original, caption="Imagen cargada", use_container_width=True)
 
-    # Convertir a numpy solo para que YOLO lo procese
+    # Convertir a numpy para que YOLO lo entienda
     img_np = np.array(imagen_original)
 
     # -----------------------
     # Detectar personas (YOLOv8n)
     # -----------------------
-    resultados_personas = modelo_personas(img_np)[0]
+    with st.spinner("Detectando personas..."):
+        resultados_personas = modelo_personas(img_np)[0]
 
     personas = []
     for box in resultados_personas.boxes:
         cls = int(box.cls[0])
-        # El ID 0 en el modelo COCO de YOLOv8 es 'person'
-        if cls == 0:  
+        if cls == 0:  # id 0 es 'persona' en YOLOv8 normal
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             personas.append((x1, y1, x2, y2))
 
-    st.subheader(f"👥 Se han detectado {len(personas)} persona(s) en la imagen")
-    st.markdown("---")
+    if len(personas) == 0:
+        st.warning("⚠️ No se detectaron personas en la imagen.")
+    else:
+        st.subheader(f"👥 Se han detectado {len(personas)} persona(s) en la imagen")
+        st.markdown("---")
 
     # -----------------------
     # Procesar cada persona con modelo PPE
@@ -105,44 +110,44 @@ if foto_final:
     for i, (x1, y1, x2, y2) in enumerate(personas, 1):
         st.markdown(f"### 👤 Trabajador {i}")
         
-        # Recorte usando PIL
+        # Recortar la persona usando PIL
         persona_crop = imagen_original.crop((x1, y1, x2, y2))
         persona_np = np.array(persona_crop)
 
         # Predecir PPE en el recorte
         resultados_ppe = modelo_ppe(persona_np)[0]
 
-        # Crear lienzo PIL para dibujar
+        # Preparar para dibujar cajas con PIL
         draw = ImageDraw.Draw(persona_crop)
         etiquetas = []
-        datos_analitica = [] 
+        datos_analitica = [] # Para guardar datos para la tabla
 
         for box in resultados_ppe.boxes:
             cls = int(box.cls[0])
             label_ingles = modelo_ppe.names[cls]
             
-            # Omitimos la etiqueta "person" si el modelo PPE la vuelve a detectar
+            # Omitimos la etiqueta "person" del modelo PPE
             if label_ingles == "person":
                 continue
 
+            # Traducir al español usando el diccionario
             label_espanol = TRADUCCION_CLASES.get(label_ingles, label_ingles.capitalize())
             conf = float(box.conf[0])
             
             etiquetas.append(label_espanol)
             datos_analitica.append({
                 "Equipo Detectado": label_espanol, 
-                "Confianza Raw": conf, 
-                "Confianza": f"{conf*100:.2f}%"
+                "Confianza": f"{conf*100:.2f}%",
+                "_conf_num": conf # Campo oculto para ordenar fácilmente
             })
 
-            # Coordenadas relativas al recorte
             x1o, y1o, x2o, y2o = map(int, box.xyxy[0])
 
-            # Dibujar caja y texto usando PIL
-            draw.rectangle([x1o, y1o, x2o, y2o], outline="#00FF00", width=4)
-            draw.text((x1o + 5, max(0, y1o - 15)), f"{label_espanol}", fill="#00FF00")
-                
-        # Creación de columnas para mostrar resultados por cada trabajador
+            # Dibujar caja de predicción con PIL
+            draw.rectangle([x1o, y1o, x2o, y2o], outline="#00FF00", width=3)
+            draw.text((x1o, max(0, y1o - 15)), f"{label_espanol} {conf:.2f}", fill="#00FF00")
+
+        # Configurar columnas para UI
         col1, col2 = st.columns([1, 2])
 
         with col1:
@@ -154,6 +159,7 @@ if foto_final:
             # -----------------------
             st.markdown("#### 🚥 Control de Acceso a Planta")
             
+            # Requisitos OBLIGATORIOS (solo Casco y Chaleco)
             requeridos = {"Casco", "Chaleco"}
             presentes = set(etiquetas)
 
@@ -161,19 +167,16 @@ if foto_final:
                 st.success("🟢 **ACCESO PERMITIDO:** El trabajador cumple con el equipo de seguridad obligatorio (Casco y Chaleco).")
             else:
                 faltantes = requeridos - presentes
-                st.error(f"🔴 **ACCESO DENEGADO:** Riesgo crítico de seguridad. Faltan los siguientes equipos obligatorios: **{', '.join(faltantes)}**")
+                st.error(f"🔴 **ACCESO DENEGADO:** Faltan equipos obligatorios: **{', '.join(faltantes)}**")
 
             # -----------------------
             # Analítica Predictiva
             # -----------------------
             st.markdown("#### 📊 Analítica del Modelo")
             if datos_analitica:
+                # Crear DataFrame y ordenar
                 df_analitica = pd.DataFrame(datos_analitica)
-                # Ordenar de mayor a menor confianza de forma limpia
-                df_analitica = df_analitica.sort_values(by="Confianza Raw", ascending=False)
-                # Borramos la columna auxiliar para no ensuciar la vista del usuario
-                df_analitica = df_analitica.drop(columns=["Confianza Raw"]).reset_index(drop=True)
-                
+                df_analitica = df_analitica.sort_values(by="_conf_num", ascending=False).drop(columns=["_conf_num"]).reset_index(drop=True)
                 st.dataframe(df_analitica, use_container_width=True)
             else:
                 st.warning("⚠️ El modelo no detectó ningún equipo de protección en este trabajador.")
