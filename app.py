@@ -143,11 +143,11 @@ if foto:
             draw.rectangle([x1o, y1o, x2o, y2o], outline="#00FF00", width=3)
             draw.text((x1o, max(0, y1o - 15)), f"{label_espanol} {conf:.2f}", fill="#00FF00")
                 # Ordenar por porcentaje de confianza usando un valor numérico
-                df_analitica["_Confianza_sort"] = pd.to_numeric(
+            df_analitica["_Confianza_sort"] = pd.to_numeric(
                     df_analitica["Confianza"].astype(str).str.replace("%", "", regex=False),
                     errors="coerce"
                 )
-                df_analitica = df_analitica.sort_values(
+            df_analitica = df_analitica.sort_values(
                     by="_Confianza_sort", ascending=False, na_position="last"
                 ).drop(columns=["_Confianza_sort"]).reset_index(drop=True)
         col1, col2 = st.columns([1, 2])
