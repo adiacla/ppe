@@ -27,8 +27,37 @@ TRADUCCION_CLASES = {
 # -----------------------
 @st.cache_resource
 def load_models():
-    modelo_personas = YOLO("yolov8n.pt")
-    modelo_ppe = YOLO("best.pt")
+    try:
+        modelo_personas = YOLO("yolov8n.pt")
+    except Exception as e:
+        mensaje = (
+            "Failed to load yolov8n.pt. "
+            "Ensure the model file exists in the application directory "
+            "and is not corrupted or incompatible."
+        )
+        if not os.path.exists("yolov8n.pt"):
+            mensaje = (
+                "Failed to load yolov8n.pt. Ensure the model file exists "
+                "in the application directory."
+            )
+        st.error(mensaje)
+        raise RuntimeError(mensaje) from e
+
+    try:
+        modelo_ppe = YOLO("best.pt")
+    except Exception as e:
+        mensaje = (
+            "Failed to load best.pt. "
+            "Ensure the model file exists in the application directory "
+            "and is not corrupted or incompatible."
+        )
+        if not os.path.exists("best.pt"):
+            mensaje = (
+                "Failed to load best.pt. Ensure the model file exists "
+                "in the application directory."
+            )
+        st.error(mensaje)
+        raise RuntimeError(mensaje) from e
     return modelo_personas, modelo_ppe
 
 modelo_personas, modelo_ppe = load_models()
@@ -58,7 +87,9 @@ if foto:
         st.image(imagen_original, caption="Imagen cargada", use_container_width=True)
 
     # Convertir a numpy (YOLO usa esto)
-    img_np = np.array(imagen_original)
+        # Dibujar sobre una copia para no mutar el recorte original
+        persona_crop_anotado = persona_crop.copy()
+        datos_analitica = []  # Para guardar datos para la tabla
 
     # -----------------------
     # Detectar personas (YOLOv8n)
@@ -111,8 +142,14 @@ if foto:
             # Dibujar caja de predicción con el nombre en español
             draw.rectangle([x1o, y1o, x2o, y2o], outline="#00FF00", width=3)
             draw.text((x1o, max(0, y1o - 15)), f"{label_espanol} {conf:.2f}", fill="#00FF00")
-
-        # Layout en 2 columnas para mostrar foto y resultados lado a lado
+                # Ordenar por porcentaje de confianza usando un valor numérico
+                df_analitica["_Confianza_sort"] = pd.to_numeric(
+                    df_analitica["Confianza"].astype(str).str.replace("%", "", regex=False),
+                    errors="coerce"
+                )
+                df_analitica = df_analitica.sort_values(
+                    by="_Confianza_sort", ascending=False, na_position="last"
+                ).drop(columns=["_Confianza_sort"]).reset_index(drop=True)
         col1, col2 = st.columns([1, 2])
 
         with col1:
