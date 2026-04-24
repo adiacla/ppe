@@ -1,0 +1,3 @@
+*.pt binary
+*.weights binary
+*.onnx binary

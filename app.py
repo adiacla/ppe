@@ -11,7 +11,6 @@ from ultralytics import YOLO
 # -----------------------
 # Diccionario de Traducción
 # -----------------------
-# Traduce las clases originales del modelo al español
 TRADUCCION_CLASES = {
     "boots": "Botas",
     "earmuffs": "Orejeras",
@@ -30,34 +29,17 @@ def load_models():
     try:
         modelo_personas = YOLO("yolov8n.pt")
     except Exception as e:
-        mensaje = (
-            "Failed to load yolov8n.pt. "
-            "Ensure the model file exists in the application directory "
-            "and is not corrupted or incompatible."
-        )
-        if not os.path.exists("yolov8n.pt"):
-            mensaje = (
-                "Failed to load yolov8n.pt. Ensure the model file exists "
-                "in the application directory."
-            )
+        mensaje = "No se pudo cargar yolov8n.pt. Asegúrate de que el archivo exista."
         st.error(mensaje)
         raise RuntimeError(mensaje) from e
 
     try:
         modelo_ppe = YOLO("best.pt")
     except Exception as e:
-        mensaje = (
-            "Failed to load best.pt. "
-            "Ensure the model file exists in the application directory "
-            "and is not corrupted or incompatible."
-        )
-        if not os.path.exists("best.pt"):
-            mensaje = (
-                "Failed to load best.pt. Ensure the model file exists "
-                "in the application directory."
-            )
+        mensaje = "No se pudo cargar best.pt. Asegúrate de que el archivo exista."
         st.error(mensaje)
         raise RuntimeError(mensaje) from e
+        
     return modelo_personas, modelo_ppe
 
 modelo_personas, modelo_ppe = load_models()
@@ -67,29 +49,39 @@ modelo_personas, modelo_ppe = load_models()
 # -----------------------
 st.set_page_config(page_title="Detección de PPE", layout="wide")
 
-# Título e Instrucciones
 st.title("🏭 Sistema Inteligente de Detección de EPP")
 st.markdown("""
 **📌 Instrucciones de uso:**
-1. Sube una fotografía del trabajador.
-2. El sistema detectará automáticamente a las personas en la imagen.
+1. Sube una fotografía del trabajador o usa la cámara en vivo.
+2. El sistema detectará automáticamente a las personas.
 3. Se verificará si portan el Equipo de Protección Personal obligatorio (**Casco y Chaleco**).
-4. El semáforo indicará si la persona está autorizada para ingresar a la planta.
+4. El semáforo indicará si la persona está autorizada para ingresar.
 """)
 st.markdown("---")
 
-foto = st.file_uploader("Sube una imagen para analizar", type=["jpg", "png", "jpeg"])
+# -----------------------
+# Captura de Imagen (Archivo o Cámara)
+# -----------------------
+col_input1, col_input2 = st.columns(2)
 
-if foto:
-    imagen_original = Image.open(foto).convert("RGB")
+with col_input1:
+    foto_subida = st.file_uploader("1️⃣ Sube una imagen para analizar", type=["jpg", "png", "jpeg"])
+
+with col_input2:
+    foto_camara = st.camera_input("2️⃣ O toma una foto desde la cámara")
+
+# Prioridad a la cámara si ambas están activas
+foto_final = foto_camara if foto_camara is not None else foto_subida
+
+if foto_final:
+    # Cargar imagen con PIL
+    imagen_original = Image.open(foto_final).convert("RGB")
     
     with st.expander("Ver imagen original", expanded=False):
-        st.image(imagen_original, caption="Imagen cargada", use_container_width=True)
+        st.image(imagen_original, caption="Imagen capturada", use_container_width=True)
 
-    # Convertir a numpy (YOLO usa esto)
-        # Dibujar sobre una copia para no mutar el recorte original
-        persona_crop_anotado = persona_crop.copy()
-        datos_analitica = []  # Para guardar datos para la tabla
+    # Convertir a numpy solo para que YOLO lo procese
+    img_np = np.array(imagen_original)
 
     # -----------------------
     # Detectar personas (YOLOv8n)
@@ -99,7 +91,8 @@ if foto:
     personas = []
     for box in resultados_personas.boxes:
         cls = int(box.cls[0])
-        if cls == 0:  # id 0 es 'persona' en YOLOv8 normal
+        # El ID 0 en el modelo COCO de YOLOv8 es 'person'
+        if cls == 0:  
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             personas.append((x1, y1, x2, y2))
 
@@ -112,15 +105,17 @@ if foto:
     for i, (x1, y1, x2, y2) in enumerate(personas, 1):
         st.markdown(f"### 👤 Trabajador {i}")
         
+        # Recorte usando PIL
         persona_crop = imagen_original.crop((x1, y1, x2, y2))
         persona_np = np.array(persona_crop)
 
         # Predecir PPE en el recorte
         resultados_ppe = modelo_ppe(persona_np)[0]
 
+        # Crear lienzo PIL para dibujar
         draw = ImageDraw.Draw(persona_crop)
         etiquetas = []
-        datos_analitica = [] # Para guardar datos para la tabla
+        datos_analitica = [] 
 
         for box in resultados_ppe.boxes:
             cls = int(box.cls[0])
@@ -130,26 +125,24 @@ if foto:
             if label_ingles == "person":
                 continue
 
-            # Traducir al español usando el diccionario
             label_espanol = TRADUCCION_CLASES.get(label_ingles, label_ingles.capitalize())
             conf = float(box.conf[0])
             
             etiquetas.append(label_espanol)
-            datos_analitica.append({"Equipo Detectado": label_espanol, "Confianza": f"{conf*100:.2f}%"})
+            datos_analitica.append({
+                "Equipo Detectado": label_espanol, 
+                "Confianza Raw": conf, 
+                "Confianza": f"{conf*100:.2f}%"
+            })
 
+            # Coordenadas relativas al recorte
             x1o, y1o, x2o, y2o = map(int, box.xyxy[0])
 
-            # Dibujar caja de predicción con el nombre en español
-            draw.rectangle([x1o, y1o, x2o, y2o], outline="#00FF00", width=3)
-            draw.text((x1o, max(0, y1o - 15)), f"{label_espanol} {conf:.2f}", fill="#00FF00")
-                # Ordenar por porcentaje de confianza usando un valor numérico
-            df_analitica["_Confianza_sort"] = pd.to_numeric(
-                    df_analitica["Confianza"].astype(str).str.replace("%", "", regex=False),
-                    errors="coerce"
-                )
-            df_analitica = df_analitica.sort_values(
-                    by="_Confianza_sort", ascending=False, na_position="last"
-                ).drop(columns=["_Confianza_sort"]).reset_index(drop=True)
+            # Dibujar caja y texto usando PIL
+            draw.rectangle([x1o, y1o, x2o, y2o], outline="#00FF00", width=4)
+            draw.text((x1o + 5, max(0, y1o - 15)), f"{label_espanol}", fill="#00FF00")
+                
+        # Creación de columnas para mostrar resultados por cada trabajador
         col1, col2 = st.columns([1, 2])
 
         with col1:
@@ -161,7 +154,6 @@ if foto:
             # -----------------------
             st.markdown("#### 🚥 Control de Acceso a Planta")
             
-            # Requisitos OBLIGATORIOS (solo Casco y Chaleco)
             requeridos = {"Casco", "Chaleco"}
             presentes = set(etiquetas)
 
@@ -177,8 +169,11 @@ if foto:
             st.markdown("#### 📊 Analítica del Modelo")
             if datos_analitica:
                 df_analitica = pd.DataFrame(datos_analitica)
-                # Ordenar por porcentaje de confianza
-                df_analitica = df_analitica.sort_values(by="Confianza", ascending=False).reset_index(drop=True)
+                # Ordenar de mayor a menor confianza de forma limpia
+                df_analitica = df_analitica.sort_values(by="Confianza Raw", ascending=False)
+                # Borramos la columna auxiliar para no ensuciar la vista del usuario
+                df_analitica = df_analitica.drop(columns=["Confianza Raw"]).reset_index(drop=True)
+                
                 st.dataframe(df_analitica, use_container_width=True)
             else:
                 st.warning("⚠️ El modelo no detectó ningún equipo de protección en este trabajador.")
