@@ -259,7 +259,7 @@ Formato: clase  x_centro  y_centro  ancho  alto
 ## 🧠 Parte 2 — Entrenamiento en Google Colab
 
 📓 **Cuaderno de entrenamiento completo:**
-[**Abrir en Google Colab →**](https://colab.research.google.com/drive/1rhCXLT5rOQns6BWy7iZUiTupvggh5Ghp?usp=sharing)
+[**Abrir en Google Colab →**](https://colab.research.google.com/drive/1rhCXLT5rOQns6BWy7iZUiTupvggh5Ghp?usp=sharing](https://drive.google.com/file/d/1K_za-5oUQpAEQBE7Rek9b0xOgRIVwwJk/view?usp=sharing)
 
 ### ¿Qué es YOLOv8?
 
